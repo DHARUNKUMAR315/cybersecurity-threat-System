@@ -2,16 +2,12 @@ FROM node:18
 
 WORKDIR /app
 
-# Copy all files first (respecting .dockerignore)
+# Copy all files (including pre-built frontend/dist)
 COPY . .
 
-# Install root dependencies
-RUN npm install
+# Install only the necessary production backend dependencies
+RUN npm install --omit=dev
 RUN npm install http-proxy-middleware express
-
-# Install frontend dependencies and build
-RUN cd frontend && npm install
-RUN cd frontend && npm run build
 
 # Set environment variables for production
 ENV NODE_ENV=production
