@@ -1,3 +1,11 @@
+---
+title: Cybersecurity Threat Systems
+emoji: 🛡️
+colorFrom: blue
+colorTo: red
+sdk: docker
+pinned: false
+---
 # Adaptive Honeypot System v2.0
 A professional cybersecurity honeypot system with dual-server architecture designed to detect and analyze network attacks in real-time.
 ## Architecture
