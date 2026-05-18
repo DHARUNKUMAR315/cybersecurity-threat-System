@@ -1,0 +1,31 @@
+{
+  "name": "adaptive-honeypot-system",
+  "version": "2.0.0",
+  "description": "Professional Adaptive Honeypot System with Main Server and Honeypot Traps",
+  "type": "module",
+  "scripts": {
+    "dev": "node Backend/main-server/server.js",
+    "trap": "node Backend/trap-server/server.js",
+    "all": "concurrently \"npm run dev\" \"npm run trap\"",
+    "install-all": "npm install && cd frontend && npm install"
+  },
+  "keywords": [
+    "honeypot",
+    "cybersecurity",
+    "security-analysis"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.6",
+    "dotenv": "^16.3.1",
+    "express": "^4.22.2",
+    "http-proxy-middleware": "^4.0.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

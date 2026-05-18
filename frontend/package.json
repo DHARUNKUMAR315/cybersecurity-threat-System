@@ -1,0 +1,25 @@
+{
+  "name": "honeypot-dashboard",
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.29",
+    "socket.io-client": "^4.8.3",
+    "axios": "^1.13.6",
+    "chart.js": "^4.5.1",
+    "vue-chartjs": "^5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.4",
+    "vite": "^7.3.1",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.2.5",
+    "@vue/tsconfig": "^0.8.1"
+  }
+}
