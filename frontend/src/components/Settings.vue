@@ -44,7 +44,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import axios from 'axios'
 
 const mainPort = ref(3000)
 const trapPort = ref(3001)
@@ -53,9 +54,43 @@ const enableHTTP = ref(true)
 const enableFTP = ref(true)
 const enableTelnet = ref(true)
 
-function saveSettings() {
-  alert('Settings saved successfully!')
+async function fetchSettings() {
+  try {
+    const response = await axios.get('/api/settings')
+    const data = response.data.data
+    if (data) {
+      mainPort.value = data.mainPort
+      trapPort.value = data.trapPort
+      enableSSH.value = data.enableSSH
+      enableHTTP.value = data.enableHTTP
+      enableFTP.value = data.enableFTP
+      enableTelnet.value = data.enableTelnet
+    }
+  } catch (error) {
+    console.error('Failed to load settings:', error)
+  }
 }
+
+async function saveSettings() {
+  try {
+    await axios.post('/api/settings', {
+      mainPort: mainPort.value,
+      trapPort: trapPort.value,
+      enableSSH: enableSSH.value,
+      enableHTTP: enableHTTP.value,
+      enableFTP: enableFTP.value,
+      enableTelnet: enableTelnet.value
+    })
+    alert('Settings saved successfully in database!')
+  } catch (error) {
+    console.error('Failed to save settings:', error)
+    alert('Failed to save settings to server.')
+  }
+}
+
+onMounted(() => {
+  fetchSettings()
+})
 </script>
 
 <style scoped>

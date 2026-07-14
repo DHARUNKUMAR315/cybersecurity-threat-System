@@ -14,3 +14,7 @@ dist/
 .env.local
 .env.*.local
 !frontend/dist/
+
+# Databases
+logs_db.json
+settings_db.json

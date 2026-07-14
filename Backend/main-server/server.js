@@ -4,6 +4,9 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 import bodyParser from 'body-parser'
 import dotenv from 'dotenv'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
 dotenv.config()
 
@@ -22,8 +25,43 @@ const PORT = process.env.MAIN_SERVER_PORT || 3000
 app.use(cors())
 app.use(bodyParser.json())
 
-// Data storage
-const logs = []
+// Database Setup
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const LOGS_FILE = path.join(__dirname, 'logs_db.json')
+const SETTINGS_FILE = path.join(__dirname, 'settings_db.json')
+
+let settings = {
+  mainPort: 3000,
+  trapPort: 3001,
+  enableSSH: true,
+  enableHTTP: true,
+  enableFTP: true,
+  enableTelnet: true
+}
+
+let logs = []
+
+// Load existing logs
+try {
+  if (fs.existsSync(LOGS_FILE)) {
+    logs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'))
+  }
+} catch (error) {
+  console.error('Failed to load logs database:', error)
+}
+
+// Load settings
+try {
+  if (fs.existsSync(SETTINGS_FILE)) {
+    settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))
+  } else {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
+  }
+} catch (error) {
+  console.error('Failed to load settings database:', error)
+}
+
 const stats = {
   total: 0,
   critical: 0,
@@ -31,6 +69,25 @@ const stats = {
   medium: 0,
   low: 0
 }
+
+function saveLogs() {
+  try {
+    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), 'utf8')
+  } catch (error) {
+    console.error('Failed to save logs database:', error)
+  }
+}
+
+function saveSettings() {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
+  } catch (error) {
+    console.error('Failed to save settings database:', error)
+  }
+}
+
+// Initialize Stats on startup
+updateStats()
 
 // Routes
 app.get('/', (req, res) => {
@@ -73,6 +130,7 @@ app.post('/api/logs', (req, res) => {
   }
   logs.unshift(newLog)
   updateStats()
+  saveLogs()
 
   io.emit('attackDetected', newLog)
 
@@ -84,6 +142,7 @@ app.delete('/api/logs/:id', (req, res) => {
   if (index === -1) return res.status(404).json({ error: 'Log not found' })
   logs.splice(index, 1)
   updateStats()
+  saveLogs()
   res.json({ success: true, message: 'Log deleted' })
 })
 
@@ -94,6 +153,18 @@ app.get('/api/stats', (req, res) => {
 app.get('/api/attacks/severity/:level', (req, res) => {
   const attacks = logs.filter(l => l.severity === req.params.level)
   res.json({ success: true, data: attacks })
+})
+
+// Settings API
+app.get('/api/settings', (req, res) => {
+  res.json({ success: true, data: settings })
+})
+
+app.post('/api/settings', (req, res) => {
+  settings = { ...settings, ...req.body }
+  saveSettings()
+  io.emit('settingsUpdated', settings)
+  res.json({ success: true, data: settings })
 })
 
 // WebSocket events
@@ -108,11 +179,27 @@ io.on('connection', (socket) => {
   })
 })
 
-function ipToGeo(ip) {
-  const privatePrefixes = ['10.', '172.', '192.168.', '127.']
-  if (!ip || privatePrefixes.some(prefix => ip.startsWith(prefix))) {
-    return { location: 'Local Network', lat: 0, lon: 0 }
+async function ipToGeo(ip) {
+  const privatePrefixes = ['10.', '172.', '192.168.', '127.', '::1', 'localhost']
+  if (!ip || privatePrefixes.some(prefix => ip.startsWith(prefix) || ip === prefix)) {
+    return { location: 'Local Network', lat: 13.0827, lon: 80.2707 } // Local Network maps to Chennai coordinate
   }
+  try {
+    const response = await fetch(`http://ip-api.com/json/${ip}`)
+    if (response.ok) {
+      const data = await response.json()
+      if (data && data.status === 'success') {
+        return {
+          location: `${data.city}, ${data.country}`,
+          lat: data.lat,
+          lon: data.lon
+        }
+      }
+    }
+  } catch (error) {
+    console.error('GeoIP lookup failed for IP:', ip, error.message)
+  }
+  // Fallback to a mock location if API fails or rate limit hit
   const sampleGeo = [
     { location: 'San Francisco, USA', lat: 37.7749, lon: -122.4194 },
     { location: 'Berlin, Germany', lat: 52.52, lon: 13.405 },
@@ -125,8 +212,8 @@ function ipToGeo(ip) {
 }
 
 // Receive logs from trap server
-app.post('/api/trap/log', (req, res) => {
-  const geo = ipToGeo(req.body.attackerIp || '')
+app.post('/api/trap/log', async (req, res) => {
+  const geo = await ipToGeo(req.body.attackerIp || '')
   const log = {
     id: Date.now(),
     timestamp: new Date().toISOString(),
@@ -137,6 +224,7 @@ app.post('/api/trap/log', (req, res) => {
   }
   logs.unshift(log)
   updateStats()
+  saveLogs()
   io.emit('attackDetected', log)
   res.status(201).json({ success: true, data: log })
 })
@@ -177,6 +265,7 @@ setInterval(() => {
     }
     logs.unshift(log)
     updateStats()
+    saveLogs()
     io.emit('attackDetected', log)
     console.log(`[Attack Detected] ${log.severity} - ${log.attackerIp}`)
   }

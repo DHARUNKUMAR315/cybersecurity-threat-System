@@ -32,26 +32,25 @@ A professional cybersecurity honeypot system with dual-server architecture desig
     └────────────────────────────────────┘
 ```
 **Main Server (Control Center)**
-- Real-time dashboard for all captured attacks
-- Attack analytics and statistics
-- Log management system
-- WebSocket broadcast to all clients
-- REST API for attack queries
- **Trap/Dummy Server (Honeypot)**
-- Fake SSH service (port 22)
-- Fake HTTP/HTTPS service (ports 80, 443)
-- Fake FTP service (port 21)
-- Fake Telnet service (port 23)
-- Captures all attack details
-- Sends data to Main Server
+- Persistent log and settings storage (`logs_db.json` & `settings_db.json`)
+- Live IP Geolocation tracking (queries dynamic GeoIP servers via `ip-api.com`)
+- Real-time dashboard broadcast with WebSockets (Socket.io)
+- REST APIs for logs, statistics, and remote settings management
 
- **Beautiful Frontend**
+**Trap Server (Honeypot)**
+- **Raw TCP Socket Emulators**:
+  - SSH Honeypot on Port `2222` (captures handshake raw payloads)
+  - FTP Honeypot on Port `2121` (captures USER and PASS brute-force attempts)
+  - Telnet Honeypot on Port `2323` (captures credentials via terminal login)
+- HTTP Emulators on Port `3001` (captures web directories traversal, nmap scans)
+- Dynamic settings sync (rejects connections dynamically if disabled on dashboard)
+
+**Beautiful Frontend**
 - Modern Vue.js 3 UI
-- Real-time attack visualization
-- Interactive charts
-- Attack severity dashboard
-- Attacker IP geolocation (optional)
-- Export logs to CSV/JSON
+- Real-time attack visualization with maps and active graphs
+- Live World Map using dynamic coordinates
+- Configurable settings panel connected to persistent backend storage
+- Export logs to CSV/JSON format
 
 ## Quick Start
 ### 1. Install Dependencies
@@ -217,7 +216,22 @@ curl http://localhost:3000/api/stats
 ### Test with Nmap
 
 ```bash
-nmap -p 22,80,443,21,23 localhost
+nmap -p 2222,2121,2323,3000,3001 localhost
+```
+
+### Test with Raw TCP (Honeypot emulators)
+
+You can run standard connection commands to interact with the raw honeypot services:
+
+```bash
+# Test SSH Honeypot
+ssh localhost -p 2222
+
+# Test FTP Honeypot
+telnet localhost 2121
+
+# Test Telnet Honeypot
+telnet localhost 2323
 ```
 
 ## Performance
