@@ -42,8 +42,9 @@ startTrap();
 app.use(express.static(path.join(__dirname, 'frontend/dist')));
 
 // Proxy rules
+const wsProxy = createProxyMiddleware({ target: 'http://localhost:3000', ws: true, changeOrigin: true });
 app.use('/api', createProxyMiddleware({ target: 'http://localhost:3000', changeOrigin: true }));
-app.use('/socket.io', createProxyMiddleware({ target: 'http://localhost:3000', ws: true, changeOrigin: true }));
+app.use('/socket.io', wsProxy);
 app.use('/health', createProxyMiddleware({ target: 'http://localhost:3000', changeOrigin: true }));
 
 // Trap proxy
@@ -54,6 +55,9 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend/dist/index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Hugging Face Proxy Server running on port ${PORT}`);
 });
+
+// Explicitly handle WebSocket upgrade requests
+server.on('upgrade', wsProxy.upgrade);

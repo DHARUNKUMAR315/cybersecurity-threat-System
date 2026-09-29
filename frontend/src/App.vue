@@ -94,7 +94,9 @@ const stats = computed(() => ({
 }))
 
 const isDev = import.meta.env.DEV
-const socket = io(isDev ? 'http://localhost:3000' : undefined)
+const socket = io(isDev ? 'http://localhost:3000' : undefined, {
+  transports: ['websocket', 'polling']
+})
 
 socket.on('connect', () => {
   isConnected.value = true
@@ -105,6 +107,12 @@ socket.on('connect', () => {
 socket.on('disconnect', () => {
   isConnected.value = false
   console.log('Disconnected from server')
+})
+
+socket.on('initialLogs', (initialLogs: Attack[]) => {
+  if (Array.isArray(initialLogs)) {
+    logs.value = initialLogs
+  }
 })
 
 socket.on('attackDetected', (attack: Attack) => {
