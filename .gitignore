@@ -18,3 +18,6 @@ dist/
 # Databases
 logs_db.json
 settings_db.json
+*.sqlite
+honeypot_db.sqlite
+

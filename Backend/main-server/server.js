@@ -7,6 +7,7 @@ import dotenv from 'dotenv'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import sqlite3 from 'sqlite3'
 
 dotenv.config()
 
@@ -25,11 +26,46 @@ const PORT = process.env.MAIN_SERVER_PORT || 3000
 app.use(cors())
 app.use(bodyParser.json())
 
-// Database Setup
+// SQL Database Setup
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-const LOGS_FILE = path.join(__dirname, 'logs_db.json')
-const SETTINGS_FILE = path.join(__dirname, 'settings_db.json')
+const SQL_DB_PATH = path.join(__dirname, 'honeypot_db.sqlite')
+
+const db = new sqlite3.Database(SQL_DB_PATH, (err) => {
+  if (err) {
+    console.error('Failed to connect to SQLite database:', err.message)
+  } else {
+    console.log('Connected to SQLite Database:', SQL_DB_PATH)
+  }
+})
+
+// Initialize SQL Tables
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS attacks (
+      id INTEGER PRIMARY KEY,
+      timestamp TEXT,
+      attackerIp TEXT,
+      service TEXT,
+      endpoint TEXT,
+      severity TEXT,
+      userAgent TEXT,
+      location TEXT,
+      lat REAL,
+      lon REAL,
+      event TEXT,
+      headers TEXT,
+      body TEXT
+    )
+  `)
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `)
+})
 
 let settings = {
   mainPort: 3000,
@@ -42,25 +78,37 @@ let settings = {
 
 let logs = []
 
-// Load existing logs
-try {
-  if (fs.existsSync(LOGS_FILE)) {
-    logs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf8'))
-  }
-} catch (error) {
-  console.error('Failed to load logs database:', error)
+// Load existing logs using SQL SELECT query
+function loadLogsFromSQL() {
+  db.all('SELECT * FROM attacks ORDER BY id DESC', [], (err, rows) => {
+    if (err) {
+      console.error('SQL Error loading attacks:', err.message)
+    } else {
+      logs = rows || []
+      updateStats()
+    }
+  })
 }
 
-// Load settings
-try {
-  if (fs.existsSync(SETTINGS_FILE)) {
-    settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'))
-  } else {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
-  }
-} catch (error) {
-  console.error('Failed to load settings database:', error)
+// Load settings using SQL SELECT query
+function loadSettingsFromSQL() {
+  db.all('SELECT key, value FROM settings', [], (err, rows) => {
+    if (err) {
+      console.error('SQL Error loading settings:', err.message)
+    } else if (rows && rows.length > 0) {
+      rows.forEach(row => {
+        try {
+          settings[row.key] = JSON.parse(row.value)
+        } catch {
+          settings[row.key] = row.value
+        }
+      })
+    }
+  })
 }
+
+loadLogsFromSQL()
+loadSettingsFromSQL()
 
 const stats = {
   total: 0,
@@ -70,24 +118,51 @@ const stats = {
   low: 0
 }
 
-function saveLogs() {
-  try {
-    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), 'utf8')
-  } catch (error) {
-    console.error('Failed to save logs database:', error)
-  }
+function saveLogToSQL(log) {
+  const sql = `
+    INSERT OR REPLACE INTO attacks 
+    (id, timestamp, attackerIp, service, endpoint, severity, userAgent, location, lat, lon, event, headers, body)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  const params = [
+    log.id,
+    log.timestamp || new Date().toISOString(),
+    log.attackerIp || '',
+    log.service || '',
+    log.endpoint || '',
+    log.severity || 'Low',
+    log.userAgent || '',
+    log.location || '',
+    log.lat || 0,
+    log.lon || 0,
+    log.event || '',
+    typeof log.headers === 'object' ? JSON.stringify(log.headers) : (log.headers || ''),
+    typeof log.body === 'object' ? JSON.stringify(log.body) : (log.body || '')
+  ]
+
+  db.run(sql, params, function(err) {
+    if (err) {
+      console.error('SQL Error saving attack log:', err.message)
+    }
+  })
 }
 
-function saveSettings() {
-  try {
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
-  } catch (error) {
-    console.error('Failed to save settings database:', error)
-  }
+function deleteLogFromSQL(id) {
+  db.run('DELETE FROM attacks WHERE id = ?', [id], function(err) {
+    if (err) {
+      console.error('SQL Error deleting attack log:', err.message)
+    }
+  })
 }
 
-// Initialize Stats on startup
-updateStats()
+function saveSettingsToSQL() {
+  const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+  Object.keys(settings).forEach(key => {
+    stmt.run(key, JSON.stringify(settings[key]))
+  })
+  stmt.finalize()
+}
+
 
 // Routes
 app.get('/', (req, res) => {
@@ -130,7 +205,7 @@ app.post('/api/logs', (req, res) => {
   }
   logs.unshift(newLog)
   updateStats()
-  saveLogs()
+  saveLogToSQL(newLog)
 
   io.emit('attackDetected', newLog)
 
@@ -138,11 +213,12 @@ app.post('/api/logs', (req, res) => {
 })
 
 app.delete('/api/logs/:id', (req, res) => {
-  const index = logs.findIndex(l => l.id === parseInt(req.params.id))
+  const logId = parseInt(req.params.id)
+  const index = logs.findIndex(l => l.id === logId)
   if (index === -1) return res.status(404).json({ error: 'Log not found' })
   logs.splice(index, 1)
   updateStats()
-  saveLogs()
+  deleteLogFromSQL(logId)
   res.json({ success: true, message: 'Log deleted' })
 })
 
@@ -162,7 +238,7 @@ app.get('/api/settings', (req, res) => {
 
 app.post('/api/settings', (req, res) => {
   settings = { ...settings, ...req.body }
-  saveSettings()
+  saveSettingsToSQL()
   io.emit('settingsUpdated', settings)
   res.json({ success: true, data: settings })
 })
@@ -224,7 +300,7 @@ app.post('/api/trap/log', async (req, res) => {
   }
   logs.unshift(log)
   updateStats()
-  saveLogs()
+  saveLogToSQL(log)
   io.emit('attackDetected', log)
   res.status(201).json({ success: true, data: log })
 })
@@ -265,7 +341,7 @@ setInterval(() => {
     }
     logs.unshift(log)
     updateStats()
-    saveLogs()
+    saveLogToSQL(log)
     io.emit('attackDetected', log)
     console.log(`[Attack Detected] ${log.severity} - ${log.attackerIp}`)
   }
