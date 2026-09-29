@@ -1,16 +1,20 @@
-FROM node:18-slim
-
-# Install build tools for native node modules (like sqlite3)
-RUN apt-get update && apt-get install -y python3 make g++ git && rm -rf /var/lib/apt/lists/*
+FROM node:18
 
 WORKDIR /app
 
-# Copy all files
+# Copy package manifests for layer caching
+COPY package*.json ./
+COPY frontend/package*.json ./frontend/
+
+# Install backend and frontend dependencies
+RUN npm install
+RUN cd frontend && npm install
+
+# Copy application source code
 COPY . .
 
-# Install dependencies for backend and frontend
-RUN npm install
-RUN cd frontend && npm install && npm run build
+# Build frontend production bundle
+RUN cd frontend && npm run build
 
 # Set environment variables for production
 ENV NODE_ENV=production
