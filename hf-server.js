@@ -8,18 +8,35 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 7860;
+const PORT = process.env.PORT || 7860;
 
-// Start both servers
-const backend = spawn('node', ['Backend/main-server/server.js'], { 
-  env: { ...process.env, MAIN_SERVER_PORT: '3000' }, 
-  stdio: 'inherit' 
-});
+// Start child servers with auto-restart supervisor logic
+let backend, trap;
 
-const trap = spawn('node', ['Backend/trap-server/server.js'], { 
-  env: { ...process.env, TRAP_SERVER_PORT: '3001', MAIN_SERVER_PORT: '3000' }, 
-  stdio: 'inherit' 
-});
+function startBackend() {
+  backend = spawn('node', ['Backend/main-server/server.js'], { 
+    env: { ...process.env, MAIN_SERVER_PORT: '3000' }, 
+    stdio: 'inherit' 
+  });
+  backend.on('exit', (code) => {
+    console.log(`Backend main-server exited with code ${code}. Respawning in 1s...`);
+    setTimeout(startBackend, 1000);
+  });
+}
+
+function startTrap() {
+  trap = spawn('node', ['Backend/trap-server/server.js'], { 
+    env: { ...process.env, TRAP_SERVER_PORT: '3001', MAIN_SERVER_PORT: '3000' }, 
+    stdio: 'inherit' 
+  });
+  trap.on('exit', (code) => {
+    console.log(`Trap server exited with code ${code}. Respawning in 1s...`);
+    setTimeout(startTrap, 1000);
+  });
+}
+
+startBackend();
+startTrap();
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, 'frontend/dist')));
